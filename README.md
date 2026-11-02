@@ -5,7 +5,8 @@ A Finder-style file browser for Android phones on macOS. Plug your phone in with
 ## Features
 
 - Opens automatically when an Android phone is plugged in (lives in the menu bar)
-- Finder-like table: name, date modified, size, kind — sortable and searchable
+- Four Finder-style views — **Icons, List, Columns and Gallery** (⌘1–⌘4) — with real thumbnails for photos, PDFs and short videos
+- Sortable, searchable list with name, date modified, size and kind
 - Sidebar shortcuts: Camera, Screenshots, Downloads, Pictures, Documents, Movies, Music, WhatsApp Media
 - Storage usage at a glance
 - Double-click a file to open it on your Mac

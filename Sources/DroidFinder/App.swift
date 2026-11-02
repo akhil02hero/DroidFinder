@@ -14,6 +14,15 @@ struct DroidFinderApp: App {
                 .frame(minWidth: 780, minHeight: 460)
         }
         .defaultSize(width: 1040, height: 660)
+        .commands {
+            CommandGroup(before: .toolbar) {
+                ForEach(ViewMode.allCases) { mode in
+                    Button(mode.title) { browser.viewMode = mode }
+                        .keyboardShortcut(mode.key, modifiers: .command)
+                }
+                Divider()
+            }
+        }
 
         MenuBarExtra {
             MenuContent().environmentObject(browser)

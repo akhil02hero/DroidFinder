@@ -18,7 +18,7 @@ lipo -create "$BIN/DroidFinder-arm64" "$BIN/DroidFinder-x86_64" -output "$APP/Co
 # App icon
 ICONSET=$(mktemp -d)/AppIcon.iconset
 mkdir -p "$ICONSET"
-swift scripts/make-icon.swift "$ICONSET/icon_512x512@2x.png"
+cp Resources/AppIcon.png "$ICONSET/icon_512x512@2x.png"
 for s in 16 32 128 256 512; do
   sips -z $s $s "$ICONSET/icon_512x512@2x.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
   d=$((s * 2))
@@ -37,8 +37,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>DroidFinder</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>

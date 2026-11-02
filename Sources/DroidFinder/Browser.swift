@@ -19,6 +19,11 @@ final class Browser: ObservableObject {
     @Published var search = ""
     @Published var showHidden = false
     @Published var storage: (free: Int64, total: Int64)?
+    @Published var viewMode = ViewMode(rawValue: UserDefaults.standard.string(forKey: "viewMode") ?? "") ?? .list {
+        didSet { UserDefaults.standard.set(viewMode.rawValue, forKey: "viewMode") }
+    }
+    /// Folder contents by path, so column view can show every level at once.
+    @Published var listings: [String: [RemoteFile]] = [:]
 
     /// Set by a view that can open the main window; called when a phone is plugged in.
     var openMain: (() -> Void)?
@@ -73,6 +78,7 @@ final class Browser: ObservableObject {
         forward = []
         path = "/sdcard"
         selection = []
+        listings = [:]
         reload()
         Task {
             if let s = try? await ADB.storage(serial) { storage = (s.0, s.1) }
@@ -88,11 +94,30 @@ final class Browser: ObservableObject {
         Task {
             do {
                 let list = try await ADB.list(serial, p)
+                listings[p] = list
                 if path == p { files = list }
             } catch {
                 if path == p { files = []; self.error = error.localizedDescription }
             }
             loading = false
+        }
+    }
+
+    /// Loads a folder's contents into `listings` if they aren't there yet.
+    func ensureListing(_ dir: String) {
+        guard let serial = selected, listings[dir] == nil else { return }
+        listings[dir] = []
+        Task {
+            if let list = try? await ADB.list(serial, dir) { listings[dir] = list }
+        }
+    }
+
+    /// Finder-style click: plain click selects one item, ⌘-click toggles it.
+    func click(_ f: RemoteFile) {
+        if NSEvent.modifierFlags.contains(.command) {
+            if selection.contains(f.id) { selection.remove(f.id) } else { selection.insert(f.id) }
+        } else {
+            selection = [f.id]
         }
     }
 
@@ -124,7 +149,7 @@ final class Browser: ObservableObject {
         path = p
         selection = []
         search = ""
-        files = []
+        files = listings[p] ?? []
         reload()
     }
 
