@@ -33,8 +33,23 @@ struct DroidFinderApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var signalSources: [DispatchSourceSignal] = []
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in Browser.shared.startWatching() }
+
+        // A phone left with an open MTP session refuses the next one until its USB mode is
+        // toggled, so close the session even when we're killed (kill, logout, installer).
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                MTP.shared.disconnectNow()
+                exit(0)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 
     // Hand the phone back to macOS (Photos, Image Capture) when quitting.

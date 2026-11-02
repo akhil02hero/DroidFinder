@@ -53,8 +53,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>DroidFinder</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.2.1</string>
-  <key>CFBundleVersion</key><string>4</string>
+  <key>CFBundleShortVersionString</key><string>1.2.2</string>
+  <key>CFBundleVersion</key><string>5</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -66,6 +66,9 @@ codesign --force --deep -s - "$APP"
 echo "Built $(pwd)/$APP"
 
 if [[ "${1:-}" == "--install" ]]; then
+  # Quit politely so the app can close its session with the phone.
+  osascript -e 'quit app "DroidFinder"' 2>/dev/null || true
+  for _ in 1 2 3 4 5; do pgrep -x DroidFinder >/dev/null || break; sleep 1; done
   pkill -x DroidFinder || true
   rm -rf "/Applications/$APP"
   cp -R "$APP" /Applications/
