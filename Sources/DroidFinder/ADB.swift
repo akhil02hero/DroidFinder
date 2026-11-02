@@ -16,6 +16,7 @@ struct ADBDevice: Identifiable, Hashable {
         case "unauthorized": return "Tap Allow on the phone"
         case "offline": return "Offline"
         case "mtp-locked": return "Unlock it and choose File transfer"
+        case "mtp-stuck": return "Not responding — replug the cable"
         default: return state
         }
     }

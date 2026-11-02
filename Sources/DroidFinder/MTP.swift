@@ -75,8 +75,9 @@ final class MTP {
         // macOS's Image Capture helper grabs MTP phones as soon as they're plugged in;
         // stop it so libmtp can claim the phone (launchd restarts it when it's needed).
         stopPhotoImporter()
+        // The phone didn't answer at all: its USB connection is stuck, not just locked.
         guard let dev = lib.openRawDevice(first) else {
-            lastState = "mtp-locked"
+            lastState = "mtp-stuck"
             return ADBDevice(serial: Self.serial, state: lastState, model: name)
         }
         // A locked phone opens but shows no storage until it's unlocked.

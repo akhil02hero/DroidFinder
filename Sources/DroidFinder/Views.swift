@@ -21,6 +21,10 @@ struct ContentView: View {
                 ContentUnavailableView(
                     "Allow access on your phone", systemImage: "lock.shield",
                     description: Text("Unlock \(d.displayName) and tap Allow on the “Allow USB debugging?” prompt.\nTick “Always allow from this computer”."))
+            } else if b.devices.contains(where: { $0.state == "mtp-stuck" }) {
+                ContentUnavailableView(
+                    "The phone isn't responding", systemImage: "cable.connector.slash",
+                    description: Text("Unplug the USB cable and plug it back in. Then make sure the phone is unlocked and set to “File transfer”."))
             } else if let d = b.devices.first(where: { $0.state == "mtp-locked" }) {
                 ContentUnavailableView(
                     "Unlock your phone", systemImage: "lock.iphone",
