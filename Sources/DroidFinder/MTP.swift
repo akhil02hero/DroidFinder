@@ -23,6 +23,8 @@ final class MTP {
     private var model = ""
     private var vendorID: UInt16 = 0
     private var productID: UInt16 = 0
+    private var openUSBEntry: UInt64 = 0
+    private var seenUSBEntry: UInt64 = 0
     private var storageID: UInt32 = 0
     private var ids: [String: UInt32] = [:]
     private var folders = Set<String>()
@@ -52,9 +54,10 @@ final class MTP {
         if !initialized { lib.initialize(); initialized = true }
 
         if device != nil {
-            if usbDevicePresent(vendor: vendorID, product: productID) {
+            if usbConnectionAlive() {
                 return ADBDevice(serial: Self.serial, state: "device", model: model)
             }
+            log("connection \(openUSBEntry) gone (now \(currentUSBEntryID().map(String.init) ?? "none")), releasing")
             releaseLocked()
             return nil
         }
@@ -70,27 +73,55 @@ final class MTP {
 
         let entry = first.pointee.device_entry
         let name = entry.product.map { String(cString: $0) } ?? "Android phone"
-        // Give the phone's file service a moment to start after it's plugged in or its USB
-        // mode changes. Every failed open makes libmtp reset the phone's USB connection, so
-        // retrying too eagerly can keep it from ever starting: back off further if it's stuck.
+
+        // Plugging in or switching the phone's USB mode (Charging only ↔ File transfer)
+        // reconnects it with a new USB registry ID. Its file service restarts then, and an
+        // attempt to open it mid-restart — plus the USB reset libmtp does when that fails —
+        // knocks the service over until the next reconnect. So after any reconnect, leave
+        // the phone alone for a few seconds.
+        let usbNow = usbEntryID(vendor: entry.vendor_id, product: entry.product_id) ?? 0
+        if usbNow != seenUSBEntry {
+            log("usb connection changed: \(seenUSBEntry) -> \(usbNow)")
+            seenUSBEntry = usbNow
+            firstSeen = Date()
+            if lastState == "mtp-stuck" { lastState = "mtp-locked" }
+        }
         let seen = firstSeen ?? Date()
         firstSeen = seen
-        let wait: TimeInterval = lastState == "mtp-stuck" ? 15 : 4
-        if Date().timeIntervalSince(seen) < 2 || Date().timeIntervalSince(lastAttempt) < wait {
+        if Date().timeIntervalSince(seen) < 3 {
+            return ADBDevice(serial: Self.serial, state: lastState, model: name)
+        }
+        // A phone that didn't answer won't recover until it reconnects, and more attempts
+        // only reset it again, so wait for a reconnect (or try again after a minute).
+        let wait: TimeInterval = lastState == "mtp-stuck" ? 60 : 4
+        if Date().timeIntervalSince(lastAttempt) < wait {
             return ADBDevice(serial: Self.serial, state: lastState, model: name)
         }
         lastAttempt = Date()
 
         // macOS's Image Capture helper grabs MTP phones as soon as they're plugged in;
         // stop it so libmtp can claim the phone (launchd restarts it when it's needed).
-        stopPhotoImporter()
+        log("opening (usb entry \(usbNow), last state \(lastState))")
+        // launchd restarts the importer at once and it grabs the phone again, so open
+        // straight after stopping it. Losing that race fails fast (the phone is just busy)
+        // and is safe to retry; a slow failure means the phone itself didn't answer.
+        var opened: LibMTP.Device?
+        for _ in 0..<3 {
+            stopPhotoImporter()
+            let started = Date()
+            opened = lib.openRawDevice(first)
+            if opened != nil || Date().timeIntervalSince(started) > 1.5 { break }
+            log("phone busy (photo importer got it first), retrying")
+        }
         // The phone didn't answer at all: its USB connection is stuck, not just locked.
-        guard let dev = lib.openRawDevice(first) else {
+        guard let dev = opened else {
+            log("open failed")
             lastState = "mtp-stuck"
             return ADBDevice(serial: Self.serial, state: lastState, model: name)
         }
         // A locked phone opens but shows no storage until it's unlocked.
         guard lib.getStorage(dev, 0) == 0, let storage = dev.pointee.storage else {
+            log("opened but no storage (locked or not in File transfer)")
             lib.releaseDevice(dev)
             lastState = "mtp-locked"
             return ADBDevice(serial: Self.serial, state: lastState, model: name)
@@ -100,6 +131,7 @@ final class MTP {
         storageID = storage.pointee.id
         vendorID = entry.vendor_id
         productID = entry.product_id
+        openUSBEntry = currentUSBEntryID() ?? 0
         if let m = lib.getModelname(dev) {
             model = String(cString: m)
             free(m)
@@ -108,6 +140,7 @@ final class MTP {
         }
         ids = [Self.root: Self.rootID]
         folders = [Self.root]
+        log("connected, usb entry \(openUSBEntry)")
         lastState = "device"
         return ADBDevice(serial: Self.serial, state: "device", model: model)
     }
@@ -117,6 +150,8 @@ final class MTP {
         device = nil
         ids = [:]
         folders = []
+        openUSBEntry = 0
+        firstSeen = nil
         lastAttempt = .distantPast
     }
 
@@ -126,14 +161,27 @@ final class MTP {
         p.arguments = ["-9", "-x", "ptpcamerad"]
         try? p.run()
         p.waitUntilExit()
-        usleep(300_000)
     }
 
-    private func usbDevicePresent(vendor: UInt16, product: UInt16) -> Bool {
-        guard let match = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary? else { return true }
+    /// The macOS registry ID of the phone's current USB connection. Switching the phone's USB
+    /// mode (say, to Charging only and back) reconnects it with a new ID even though the
+    /// vendor and product IDs stay the same, so this is what tells us the session is dead.
+    private func currentUSBEntryID() -> UInt64? { usbEntryID(vendor: vendorID, product: productID) }
+
+    private func usbEntryID(vendor: UInt16, product: UInt16) -> UInt64? {
+        guard let match = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary? else { return nil }
         match["idVendor"] = vendor
         match["idProduct"] = product
         let service = IOServiceGetMatchingService(kIOMainPortDefault, match)
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        var id: UInt64 = 0
+        return IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS ? id : nil
+    }
+
+    private func usbConnectionAlive() -> Bool {
+        guard openUSBEntry != 0 else { return currentUSBEntryID() != nil }
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IORegistryEntryIDMatching(openUSBEntry))
         defer { if service != 0 { IOObjectRelease(service) } }
         return service != 0
     }
@@ -339,5 +387,19 @@ final class MTP {
         await withCheckedContinuation { cont in
             queue.async { cont.resume(returning: work()) }
         }
+    }
+}
+
+/// A short connection log at ~/Library/Logs/DroidFinder.log, for diagnosing phones that won't connect.
+private func log(_ message: String) {
+    let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Logs/DroidFinder.log")
+    let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+    if let handle = try? FileHandle(forWritingTo: url) {
+        handle.seekToEndOfFile()
+        handle.write(Data(line.utf8))
+        try? handle.close()
+    } else {
+        try? line.write(to: url, atomically: true, encoding: .utf8)
     }
 }
