@@ -27,6 +27,7 @@ final class Browser: ObservableObject {
 
     /// Set by a view that can open the main window; called when a phone is plugged in.
     var openMain: (() -> Void)?
+    private static let forceMTP = ProcessInfo.processInfo.environment["DROIDFINDER_FORCE_MTP"] == "1"
     private var knownReady = Set<String>()
     private var watching = false
 
@@ -47,7 +48,15 @@ final class Browser: ObservableObject {
     }
 
     func refreshDevices() async {
-        guard let list = try? await ADB.devices() else { return }
+        // DROIDFINDER_FORCE_MTP=1 ignores adb, to try File transfer mode without changing phone settings.
+        var list = Self.forceMTP ? [] : (try? await ADB.devices()) ?? []
+        // adb (USB debugging on) gives full access, so it wins. Without a phone on the
+        // cable over adb, fall back to MTP ("File transfer" mode).
+        if list.contains(where: { $0.isReady && !$0.isWireless }) {
+            await MTP.shared.disconnect()
+        } else if let phone = await MTP.shared.poll() {
+            list.insert(phone, at: 0)
+        }
         if list != devices { devices = list }
 
         let ready = Set(list.filter(\.isReady).map(\.serial))
@@ -59,7 +68,12 @@ final class Browser: ObservableObject {
             files = []
             storage = nil
         }
-        // Prefer a phone on the cable over anything on Wi-Fi.
+        // A phone just plugged in by cable takes over from anything on Wi-Fi.
+        if let plugged = list.first(where: { newlyReady.contains($0.serial) && !$0.isWireless }),
+           plugged.serial != selected {
+            open(plugged.serial)
+        }
+        // Otherwise prefer a phone on the cable over anything on Wi-Fi.
         if selected == nil,
            let pick = list.first(where: { $0.isReady && !$0.isWireless }) ?? list.first(where: \.isReady) {
             open(pick.serial)
@@ -81,7 +95,7 @@ final class Browser: ObservableObject {
         listings = [:]
         reload()
         Task {
-            if let s = try? await ADB.storage(serial) { storage = (s.0, s.1) }
+            if let s = try? await Phone.storage(serial) { storage = (s.0, s.1) }
         }
     }
 
@@ -93,7 +107,7 @@ final class Browser: ObservableObject {
         loading = true
         Task {
             do {
-                let list = try await ADB.list(serial, p)
+                let list = try await Phone.list(serial, p)
                 listings[p] = list
                 if path == p { files = list }
             } catch {
@@ -108,7 +122,7 @@ final class Browser: ObservableObject {
         guard let serial = selected, listings[dir] == nil else { return }
         listings[dir] = []
         Task {
-            if let list = try? await ADB.list(serial, dir) { listings[dir] = list }
+            if let list = try? await Phone.list(serial, dir) { listings[dir] = list }
         }
     }
 
@@ -140,7 +154,11 @@ final class Browser: ObservableObject {
         go(p)
     }
 
+    /// MTP only reaches the phone's storage, so there's nothing above /sdcard.
+    var rootPath: String { device?.isMTP == true ? MTP.root : "/" }
+
     func goUp() {
+        guard path != rootPath else { return }
         let parent = (path as NSString).deletingLastPathComponent
         navigate(to: parent.isEmpty ? "/" : parent)
     }
@@ -159,7 +177,7 @@ final class Browser: ObservableObject {
         Task {
             await withBusy("Opening \(f.name)…") {
                 let target = Self.tempDir().appendingPathComponent(f.name)
-                try await ADB.pull(serial, f.path, to: target)
+                try await Phone.pull(serial, f.path, to: target)
                 NSWorkspace.shared.open(target)
             }
         }
@@ -175,7 +193,7 @@ final class Browser: ObservableObject {
             for (i, f) in items.enumerated() {
                 let ok = await withBusy("Copying \(i + 1) of \(items.count): \(f.name)…") {
                     let target = Self.uniqueURL(in: folder, name: f.name)
-                    try await ADB.pull(serial, f.path, to: target)
+                    try await Phone.pull(serial, f.path, to: target)
                     copied.append(target)
                 }
                 if !ok { break }
@@ -202,7 +220,7 @@ final class Browser: ObservableObject {
                 let name = Self.uniqueName(url.lastPathComponent, taken: taken)
                 taken.insert(name)
                 let ok = await withBusy("Copying \(i + 1) of \(urls.count) to phone: \(url.lastPathComponent)…") {
-                    try await ADB.push(serial, url, to: (dir as NSString).appendingPathComponent(name))
+                    try await Phone.push(serial, url, to: (dir as NSString).appendingPathComponent(name))
                 }
                 if !ok { break }
             }
@@ -234,7 +252,7 @@ final class Browser: ObservableObject {
             Task.detached {
                 do {
                     let target = Browser.tempDir().appendingPathComponent(f.name)
-                    try await ADB.pull(serial, f.path, to: target)
+                    try await Phone.pull(serial, f.path, to: target)
                     done(target, false, nil)
                 } catch {
                     done(nil, false, error)
@@ -252,7 +270,7 @@ final class Browser: ObservableObject {
         guard let serial = selected, !name.isEmpty else { return }
         let target = (path as NSString).appendingPathComponent(name)
         Task {
-            await withBusy("Creating \(name)…") { try await ADB.shell(serial, "mkdir -p \(ADB.quote(target))") }
+            await withBusy("Creating \(name)…") { try await Phone.makeFolder(serial, target) }
             reload()
         }
     }
@@ -262,7 +280,7 @@ final class Browser: ObservableObject {
         guard let serial = selected, !name.isEmpty, name != f.name, !name.contains("/") else { return }
         let target = ((f.path as NSString).deletingLastPathComponent as NSString).appendingPathComponent(name)
         Task {
-            await withBusy("Renaming…") { try await ADB.shell(serial, "mv -n \(ADB.quote(f.path)) \(ADB.quote(target))") }
+            await withBusy("Renaming…") { try await Phone.rename(serial, f.path, to: target) }
             reload()
         }
     }
@@ -271,7 +289,7 @@ final class Browser: ObservableObject {
         guard let serial = selected, !items.isEmpty else { return }
         Task {
             for f in items {
-                let ok = await withBusy("Deleting \(f.name)…") { try await ADB.shell(serial, "rm -rf \(ADB.quote(f.path))") }
+                let ok = await withBusy("Deleting \(f.name)…") { try await Phone.delete(serial, f.path) }
                 if !ok { break }
             }
             selection = []

@@ -165,7 +165,7 @@ struct FileBrowser: View {
             Button { b.goForward() } label: { Image(systemName: "chevron.right") }
                 .disabled(b.forward.isEmpty).help("Forward").keyboardShortcut("]", modifiers: .command)
             Button { b.goUp() } label: { Image(systemName: "arrow.up") }
-                .disabled(b.path == "/").help("Enclosing Folder").keyboardShortcut(.upArrow, modifiers: .command)
+                .disabled(b.path == b.rootPath).help("Enclosing Folder").keyboardShortcut(.upArrow, modifiers: .command)
         }
         ToolbarItem(placement: .primaryAction) {
             Picker("View", selection: $b.viewMode) {

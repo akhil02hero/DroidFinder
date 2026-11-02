@@ -16,14 +16,28 @@ A Finder-style file browser for Android phones on macOS. Plug your phone in with
 - Back / forward / enclosing folder, with ⌘[ ⌘] ⌘↑ shortcuts
 - Optional Open at Login
 
+## Two ways to connect
+
+DroidFinder picks automatically:
+
+| Phone setting | DroidFinder uses | Notes |
+|---|---|---|
+| **USB debugging on** | `adb` | Full access, fastest, shows hidden files |
+| **USB debugging off**, USB set to **File transfer** | MTP | No developer settings needed; slower in very large folders, no hidden files |
+
+If USB debugging is turned on while connected over MTP, it switches to `adb` by itself.
+
 ## Requirements
 
 - macOS 14 Sonoma or later
-- `adb` (Android platform tools):
+- For USB debugging mode, `adb` (Android platform tools):
   ```bash
   brew install android-platform-tools
   ```
-- On the phone: **Settings → Developer options → USB debugging** turned on, and **Allow** tapped on the prompt the first time you connect
+  and on the phone **Settings → Developer options → USB debugging**, tapping **Allow** the first time you connect
+- File transfer mode works out of the box on Apple Silicon (libmtp is bundled). On Intel Macs, `brew install libmtp`.
+
+While DroidFinder has the phone open in File transfer mode, Photos and Image Capture can't import from it; quit DroidFinder to hand it back.
 
 ## Build
 
@@ -47,4 +61,4 @@ DroidFinder is a SwiftUI front end over `adb`: folders are listed with `find`/`s
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). The app bundles [libmtp](https://github.com/libmtp/libmtp) and [libusb](https://libusb.info), both LGPL-2.1, as separate dynamic libraries; `Sources/CLibMTP/libmtp.h` is libmtp's header.

@@ -11,20 +11,24 @@ struct ContentView: View {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220)
         } detail: {
-            if ADB.path == nil {
+            if b.device != nil {
+                FileBrowser()
+            } else if ADB.path == nil && !MTP.shared.isAvailable {
                 ContentUnavailableView(
                     "adb is not installed", systemImage: "wrench.and.screwdriver",
                     description: Text("Open Terminal and run:\nbrew install android-platform-tools"))
-            } else if b.device != nil {
-                FileBrowser()
             } else if let d = b.devices.first(where: { $0.state == "unauthorized" }) {
                 ContentUnavailableView(
                     "Allow access on your phone", systemImage: "lock.shield",
                     description: Text("Unlock \(d.displayName) and tap Allow on the “Allow USB debugging?” prompt.\nTick “Always allow from this computer”."))
+            } else if let d = b.devices.first(where: { $0.state == "mtp-locked" }) {
+                ContentUnavailableView(
+                    "Unlock your phone", systemImage: "lock.iphone",
+                    description: Text("Unlock \(d.displayName). If it still doesn't appear, pull down the notifications, tap the USB notification and choose “File transfer”."))
             } else {
                 ContentUnavailableView(
                     "Connect your Android phone", systemImage: "cable.connector",
-                    description: Text("Plug it in with a USB cable.\nOn the phone, turn on Settings → Developer options → USB debugging."))
+                    description: Text("Plug it in with a USB cable and choose “File transfer” on the phone.\nFor full access, also turn on Settings → Developer options → USB debugging."))
             }
         }
         .alert("Something went wrong", isPresented: Binding(get: { b.error != nil }, set: { if !$0 { b.error = nil } })) {
@@ -76,6 +80,8 @@ struct Sidebar: View {
                                     .fontWeight(d.serial == b.selected ? .semibold : .regular)
                                 if !d.isReady {
                                     Text(d.stateText).font(.caption).foregroundStyle(.secondary)
+                                } else if d.isMTP {
+                                    Text("File transfer mode").font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                         } icon: {

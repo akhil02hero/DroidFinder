@@ -37,6 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in Browser.shared.startWatching() }
     }
 
+    // Hand the phone back to macOS (Photos, Image Capture) when quitting.
+    func applicationWillTerminate(_ notification: Notification) {
+        MTP.shared.disconnectNow()
+    }
+
     // Keep running in the menu bar so we can pop up when a phone is plugged in.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 

@@ -15,6 +15,22 @@ for arch in arm64 x86_64; do
 done
 lipo -create "$BIN/DroidFinder-arm64" "$BIN/DroidFinder-x86_64" -output "$APP/Contents/MacOS/DroidFinder"
 
+# Bundle libmtp + libusb (for File transfer mode) so people don't need Homebrew for it.
+# The app opens them at runtime and falls back to Homebrew's copies if these are missing.
+if MTP_PREFIX=$(brew --prefix libmtp 2>/dev/null) && [[ -f "$MTP_PREFIX/lib/libmtp.9.dylib" ]]; then
+  FW="$APP/Contents/Frameworks"
+  mkdir -p "$FW"
+  USB_LIB=$(otool -L "$MTP_PREFIX/lib/libmtp.9.dylib" | awk '/libusb/ {print $1}')
+  cp "$MTP_PREFIX/lib/libmtp.9.dylib" "$FW/"
+  cp "$USB_LIB" "$FW/libusb-1.0.0.dylib"
+  chmod u+w "$FW"/*.dylib
+  install_name_tool -id @rpath/libmtp.9.dylib "$FW/libmtp.9.dylib" 2>/dev/null
+  install_name_tool -id @rpath/libusb-1.0.0.dylib "$FW/libusb-1.0.0.dylib" 2>/dev/null
+  install_name_tool -change "$USB_LIB" @loader_path/libusb-1.0.0.dylib "$FW/libmtp.9.dylib" 2>/dev/null
+else
+  echo "note: libmtp not found (brew install libmtp) — building without File transfer support bundled"
+fi
+
 # App icon
 ICONSET=$(mktemp -d)/AppIcon.iconset
 mkdir -p "$ICONSET"
@@ -37,8 +53,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>DroidFinder</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.1</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>1.2</string>
+  <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>

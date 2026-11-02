@@ -1,0 +1,6 @@
+// Types only: the library itself is loaded at runtime with dlopen (see LibMTP.swift),
+// so the app still launches on Macs without libmtp and the build stays universal.
+module CLibMTP [system] {
+    header "libmtp.h"
+    export *
+}

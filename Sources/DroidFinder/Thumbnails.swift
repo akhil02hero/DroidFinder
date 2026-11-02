@@ -55,7 +55,9 @@ final class Thumbnails: ObservableObject {
     }
 
     private func pump() {
-        while running < maxRunning, !queue.isEmpty {
+        // MTP does one thing at a time, so keep at most one preview ahead of folder listings.
+        let limit = Browser.shared.selected == MTP.serial ? 1 : maxRunning
+        while running < limit, !queue.isEmpty {
             let (f, tag) = queue.removeFirst()
             let parts = tag.split(separator: "|")
             let serial = String(parts[0]), size = Int(parts[1]) ?? 128
@@ -77,7 +79,7 @@ final class Thumbnails: ObservableObject {
         let url = cacheDir.appendingPathComponent(f.ext.isEmpty ? name : "\(name).\(f.ext)")
         if !FileManager.default.fileExists(atPath: url.path) {
             let partial = url.appendingPathExtension("part")
-            try await ADB.pull(serial, f.path, to: partial)
+            try await Phone.pull(serial, f.path, to: partial)
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: partial, to: url)
         }
@@ -85,6 +87,11 @@ final class Thumbnails: ObservableObject {
     }
 
     nonisolated private static func render(_ f: RemoteFile, serial: String, size: Int) async -> NSImage? {
+        // Over MTP the phone hands over its own small photo previews, which beats copying the photo.
+        if serial == MTP.serial, size <= 320, UTType(filenameExtension: f.ext)?.conforms(to: .image) == true,
+           let data = await MTP.shared.thumbnail(f.path), let image = NSImage(data: data) {
+            return image
+        }
         guard let url = try? await localCopy(of: f, serial: serial) else { return nil }
         let request = QLThumbnailGenerator.Request(
             fileAt: url, size: CGSize(width: size, height: size), scale: 2, representationTypes: .thumbnail)

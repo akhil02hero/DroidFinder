@@ -9,11 +9,13 @@ struct ADBDevice: Identifiable, Hashable {
     var id: String { serial }
     var isReady: Bool { state == "device" }
     var isWireless: Bool { serial.contains(":") }
+    var isMTP: Bool { serial == MTP.serial }
     var displayName: String { model.isEmpty ? serial : model.replacingOccurrences(of: "_", with: " ") }
     var stateText: String {
         switch state {
         case "unauthorized": return "Tap Allow on the phone"
         case "offline": return "Offline"
+        case "mtp-locked": return "Unlock it and choose File transfer"
         default: return state
         }
     }
@@ -153,5 +155,48 @@ enum ADB {
         let f = out.split(separator: " ", omittingEmptySubsequences: true)
         guard f.count >= 4, let total = Int64(f[1]), let free = Int64(f[3]) else { return nil }
         return (free * 1024, total * 1024)
+    }
+}
+
+/// Sends each file operation over adb or MTP, depending on how the phone is connected.
+enum Phone {
+    static func list(_ serial: String, _ dir: String) async throws -> [RemoteFile] {
+        serial == MTP.serial ? try await MTP.shared.list(dir) : try await ADB.list(serial, dir)
+    }
+
+    static func pull(_ serial: String, _ remote: String, to local: URL) async throws {
+        if serial == MTP.serial { try await MTP.shared.pull(remote, to: local) } else { try await ADB.pull(serial, remote, to: local) }
+    }
+
+    static func push(_ serial: String, _ local: URL, to remote: String) async throws {
+        if serial == MTP.serial { try await MTP.shared.push(local, to: remote) } else { try await ADB.push(serial, local, to: remote) }
+    }
+
+    static func storage(_ serial: String) async throws -> (Int64, Int64)? {
+        serial == MTP.serial ? try await MTP.shared.storage() : try await ADB.storage(serial)
+    }
+
+    static func makeFolder(_ serial: String, _ path: String) async throws {
+        if serial == MTP.serial {
+            try await MTP.shared.makeFolder(path)
+        } else {
+            try await ADB.shell(serial, "mkdir -p \(ADB.quote(path))")
+        }
+    }
+
+    static func rename(_ serial: String, _ path: String, to newPath: String) async throws {
+        if serial == MTP.serial {
+            try await MTP.shared.rename(path, to: newPath)
+        } else {
+            try await ADB.shell(serial, "mv -n \(ADB.quote(path)) \(ADB.quote(newPath))")
+        }
+    }
+
+    static func delete(_ serial: String, _ path: String) async throws {
+        if serial == MTP.serial {
+            try await MTP.shared.delete(path)
+        } else {
+            try await ADB.shell(serial, "rm -rf \(ADB.quote(path))")
+        }
     }
 }
