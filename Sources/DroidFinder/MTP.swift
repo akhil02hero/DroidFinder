@@ -27,6 +27,7 @@ final class MTP {
     private var ids: [String: UInt32] = [:]
     private var folders = Set<String>()
     private var lastAttempt = Date.distantPast
+    private var firstSeen: Date?
     private var lastState = "mtp-locked"
 
     // MARK: Connection
@@ -62,12 +63,20 @@ final class MTP {
         var count: Int32 = 0
         let result = lib.detectRawDevices(&raw, &count)
         defer { free(raw) }
-        guard result == LIBMTP_ERROR_NONE, count > 0, let first = raw else { return nil }
+        guard result == LIBMTP_ERROR_NONE, count > 0, let first = raw else {
+            firstSeen = nil
+            return nil
+        }
 
         let entry = first.pointee.device_entry
         let name = entry.product.map { String(cString: $0) } ?? "Android phone"
-        // Opening is slow and kicks macOS's photo importer, so don't retry every poll.
-        if Date().timeIntervalSince(lastAttempt) < 4 {
+        // Give the phone's file service a moment to start after it's plugged in or its USB
+        // mode changes. Every failed open makes libmtp reset the phone's USB connection, so
+        // retrying too eagerly can keep it from ever starting: back off further if it's stuck.
+        let seen = firstSeen ?? Date()
+        firstSeen = seen
+        let wait: TimeInterval = lastState == "mtp-stuck" ? 15 : 4
+        if Date().timeIntervalSince(seen) < 2 || Date().timeIntervalSince(lastAttempt) < wait {
             return ADBDevice(serial: Self.serial, state: lastState, model: name)
         }
         lastAttempt = Date()
