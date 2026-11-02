@@ -3,11 +3,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
 APP=DroidFinder.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/DroidFinder "$APP/Contents/MacOS/"
+
+# Universal binary: build each architecture in turn (both land in .build/release), then merge.
+BIN=$(mktemp -d)
+for arch in arm64 x86_64; do
+  swift build -c release --triple "$arch-apple-macosx14.0"
+  cp .build/release/DroidFinder "$BIN/DroidFinder-$arch"
+done
+lipo -create "$BIN/DroidFinder-arm64" "$BIN/DroidFinder-x86_64" -output "$APP/Contents/MacOS/DroidFinder"
 
 # App icon
 ICONSET=$(mktemp -d)/AppIcon.iconset
