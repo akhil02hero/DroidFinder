@@ -172,6 +172,11 @@ private struct ColumnList: View {
             }
             .padding(.vertical, 4)
         }
+        .overlay {
+            if items.isEmpty && b.loadingPaths.contains(dir) {
+                ProgressView().controlSize(.small).allowsHitTesting(false)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             if dir != b.path { b.navigate(to: dir) }

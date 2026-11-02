@@ -13,7 +13,9 @@ final class Browser: ObservableObject {
     @Published var selection = Set<RemoteFile.ID>()
     @Published var back: [String] = []
     @Published var forward: [String] = []
-    @Published var loading = false
+    /// Folders being fetched from the phone right now (the current one, plus any column view is filling).
+    @Published var loadingPaths = Set<String>()
+    var loading: Bool { loadingPaths.contains(path) }
     @Published var busy: String?
     @Published var error: String?
     @Published var search = ""
@@ -104,7 +106,7 @@ final class Browser: ObservableObject {
     func reload() {
         guard let serial = selected else { return }
         let p = path
-        loading = true
+        loadingPaths.insert(p)
         Task {
             do {
                 let list = try await Phone.list(serial, p)
@@ -113,7 +115,7 @@ final class Browser: ObservableObject {
             } catch {
                 if path == p { files = []; self.error = error.localizedDescription }
             }
-            loading = false
+            loadingPaths.remove(p)
         }
     }
 
@@ -121,8 +123,10 @@ final class Browser: ObservableObject {
     func ensureListing(_ dir: String) {
         guard let serial = selected, listings[dir] == nil else { return }
         listings[dir] = []
+        loadingPaths.insert(dir)
         Task {
             if let list = try? await Phone.list(serial, dir) { listings[dir] = list }
+            loadingPaths.remove(dir)
         }
     }
 

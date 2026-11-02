@@ -151,6 +151,9 @@ struct PathBar: View {
             if let busy = b.busy {
                 ProgressView().controlSize(.small)
                 Text(busy).lineLimit(1).foregroundStyle(.secondary)
+            } else if b.loading {
+                ProgressView().controlSize(.small)
+                Text("Loading…").foregroundStyle(.secondary)
             } else {
                 Text(b.selection.isEmpty ? "\(count) items" : "\(b.selection.count) of \(count) selected")
                     .foregroundStyle(.secondary)

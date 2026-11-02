@@ -58,10 +58,16 @@ struct FileBrowser: View {
     var body: some View {
         content
             .onDeleteCommand { ui.pendingDelete = b.selectedFiles }
+            .overlay(alignment: .top) {
+                if b.loading && !b.files.isEmpty {
+                    ProgressView().progressViewStyle(.linear).controlSize(.small).allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if b.viewMode != .columns {
                     if b.loading && b.files.isEmpty {
-                        ProgressView()
+                        LoaderCard(title: "Loading \(title)…", subtitle: b.device?.isMTP == true
+                            ? "Large folders can take a while over File transfer" : nil)
                     } else if !b.loading && rows.isEmpty {
                         Text(b.search.isEmpty ? "This folder is empty" : "No matches").foregroundStyle(.secondary)
                     }
@@ -221,5 +227,22 @@ struct ItemMenu: View {
             Divider()
             Button("Delete…", role: .destructive) { ui.pendingDelete = items }
         }
+    }
+}
+
+/// Centered spinner shown while a folder is being fetched from the phone.
+struct LoaderCard: View {
+    let title: String
+    var subtitle: String?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView().controlSize(.large)
+            Text(title).font(.headline)
+            if let subtitle { Text(subtitle).font(.callout).foregroundStyle(.secondary) }
+        }
+        .padding(28)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .allowsHitTesting(false)
     }
 }
